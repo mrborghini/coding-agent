@@ -1,3 +1,10 @@
+/*
+ * Copyright (C) 2026  mrborghini
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License with AI Reciprocity
+ * as published in this repository.
+ */
+
 use async_trait::async_trait;
 
 use super::{Conversation, Tool, StreamingMessage};

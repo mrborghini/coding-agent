@@ -1,3 +1,10 @@
+/*
+ * Copyright (C) 2026  mrborghini
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License with AI Reciprocity
+ * as published in this repository.
+ */
+
 use super::{
     Config, Conversation, LLM, LLMMessage, Role, StreamingCallback, StreamingMessage, Tool,
 };
@@ -54,7 +61,7 @@ pub struct OllamaBody<'a> {
     model: &'a str,
     messages: Vec<LLMMessage>,
     stream: bool,
-    options: Option<OllamaOptions>
+    options: Option<OllamaOptions>,
 }
 
 pub struct Ollama<'a> {
@@ -138,7 +145,7 @@ impl LLM for Ollama<'_> {
         on_streaming_message: StreamingCallback,
     ) -> Conversation {
         let ollama_url = format!("{}/api/chat", self.cfg.ollama_url);
-        
+
         let options = OllamaOptions {
             num_ctx: Some(262144),
             temperature: Some(0.6),
@@ -152,11 +159,11 @@ impl LLM for Ollama<'_> {
             model: &self.cfg.model,
             messages: conversation.messages.clone(),
             stream: true,
-            options: Some(options)
+            options: Some(options),
         };
 
         let resp = self.http_client.post(ollama_url).json(&json).send().await;
-        
+
         let mut full_content = String::new();
 
         if let Ok(r) = resp {
