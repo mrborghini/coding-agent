@@ -1,0 +1,324 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  EXECUTABLE_NAME: "coding-agent"
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.bump.outputs.ref }}
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Bump Cargo.toml version if unchanged
+      id: bump
+      run: |
+        CURRENT=$(grep '^version =' Cargo.toml | head -n 1 | sed 's/version = "//;s/"//')
+        LATEST_TAG=$(git tag -l --sort=-v:refname | head -1)
+        if [ -z "$LATEST_TAG" ]; then
+          LATEST="0.0.0"
+        else
+          LATEST="${LATEST_TAG#v}"
+        fi
+
+        NEED_BUMP=false
+        if [ "$(printf "%s\n%s" "$CURRENT" "$LATEST" | sort -V | head -n 1)" = "$CURRENT" ] && [ "$CURRENT" != "$LATEST" ]; then
+          NEED_BUMP=true
+        elif [ "$CURRENT" = "$LATEST" ]; then
+          NEED_BUMP=true
+        fi
+
+        if [ "$NEED_BUMP" = true ]; then
+          MAJOR=$(echo "$CURRENT" | cut -d. -f1)
+          MINOR=$(echo "$CURRENT" | cut -d. -f2)
+          PATCH=$(echo "$CURRENT" | cut -d. -f3)
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+          sed -i "s/^version = \".*\"$/version = \"$NEW_VERSION\"/" Cargo.toml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml
+          git commit -m "chore: bump version to $NEW_VERSION [skip ci]"
+          git push
+        fi
+        echo "ref=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+  extract-version:
+    runs-on: ubuntu-latest
+    needs: bump-version
+    outputs:
+      version: ${{ steps.extract_version.outputs.version }}
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ needs.bump-version.outputs.ref }}
+
+    - name: Extract version from Cargo.toml
+      id: extract_version
+      run: |
+        version=$(grep '^version =' Cargo.toml | head -n 1 | sed 's/version = \"//;s/\"//')
+        echo "version=$version" >> $GITHUB_OUTPUT
+
+  build-linux-x86_64:
+    runs-on: ubuntu-latest
+    needs: [bump-version]
+
+    env:
+      IDENTIFIER: "x86_64-Linux"
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ needs.bump-version.outputs.ref }}
+
+    - name: Install Rust
+      run: rustup update stable
+
+    - name: Run tests
+      run: cargo test --release --verbose
+
+    - name: Run build
+      run: cargo build --release --verbose
+
+    - name: Create release artifact
+      run: |
+        cp target/release/${{ env.EXECUTABLE_NAME }} ${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}
+        path: ./${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}
+  
+  build-linux-aarch64:
+    runs-on: ubuntu-latest
+    needs: [bump-version]
+
+    env:
+      IDENTIFIER: "aarch64-Linux"
+      TARGET_COMPILER: "aarch64-unknown-linux-gnu"
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: "aarch64-linux-gnu-gcc"
+  
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ needs.bump-version.outputs.ref }}
+
+    - name: Install Rust
+      run: rustup update stable
+
+    - name: Download cross compiler
+      run: rustup target add ${{ env.TARGET_COMPILER }}
+
+    - name: Install build dependencies
+      run: sudo apt install gcc-aarch64-linux-gnu -y
+
+    - name: Setup vendored openssl
+      run: cargo add openssl -F vendored
+
+    - name: Run build
+      run: cargo build --release --target ${{ env.TARGET_COMPILER }} --verbose
+    
+    - name: Create release artifact
+      run: |
+        cp target/${{ env.TARGET_COMPILER }}/release/${{ env.EXECUTABLE_NAME }} ${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}
+        path: ./${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}
+
+  build-linux-x86_64-musl:
+    runs-on: ubuntu-latest
+    needs: [bump-version]
+
+    env:
+      IDENTIFIER: "x86_64-Linux-musl"
+      TARGET_COMPILER: "x86_64-unknown-linux-musl"
+  
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ needs.bump-version.outputs.ref }}
+
+    - name: Install Rust
+      run: rustup update stable
+
+    - name: Download cross compiler
+      run: rustup target add ${{ env.TARGET_COMPILER }}
+
+    - name: Install build dependencies
+      run: sudo apt install musl-tools -y
+
+    - name: Setup vendored openssl
+      run: cargo add openssl -F vendored
+
+    - name: Run build
+      run: cargo build --release --target ${{ env.TARGET_COMPILER }} --verbose
+    
+    - name: Create release artifact
+      run: |
+        cp target/${{ env.TARGET_COMPILER }}/release/${{ env.EXECUTABLE_NAME }} ${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}
+        path: ./${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}
+
+  build-windows-x86_64:
+    runs-on: windows-latest
+    needs: [bump-version]
+
+    env:
+      IDENTIFIER: "x86_64-Windows"
+  
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ needs.bump-version.outputs.ref }}
+
+    - name: Install Rust
+      run: rustup update stable
+
+    - name: Run tests
+      run: cargo test --release --verbose
+
+    - name: Run build
+      run: cargo build --release --verbose
+    
+    - name: Create release artifact
+      run: |
+        cp target/release/${{ env.EXECUTABLE_NAME }}.exe ${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}.exe
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}.exe
+        path: ./${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}.exe
+
+  build-windows-aarch64:
+    runs-on: windows-latest
+    needs: [bump-version]
+
+    env:
+      IDENTIFIER: "aarch64-Windows"
+      TARGET_COMPILER: "aarch64-pc-windows-msvc"
+  
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ needs.bump-version.outputs.ref }}
+
+    - name: Install Rust
+      run: rustup update stable
+
+    - name: Download cross compiler
+      run: rustup target add ${{ env.TARGET_COMPILER }}
+
+    - name: Run build
+      run: cargo build --release --target ${{ env.TARGET_COMPILER }} --verbose
+    
+    - name: Create release artifact
+      run: |
+        cp target/${{ env.TARGET_COMPILER }}/release/${{ env.EXECUTABLE_NAME }}.exe ${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}.exe
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}.exe
+        path: ./${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}.exe
+
+  release:
+    runs-on: ubuntu-latest
+    needs:
+      - bump-version
+      - extract-version
+      - build-linux-x86_64
+      - build-linux-aarch64
+      - build-linux-x86_64-musl
+      - build-windows-x86_64
+      - build-windows-aarch64
+
+    env:
+      EXTRACTED_VERSION: ${{ needs.extract-version.outputs.version }}
+      ARTIFACTS_DIR: "downloaded-artifacts/"
+      LINUX_AMD64_PATH: ""
+      LINUX_AMD64_MUSL_PATH: ""
+      LINUX_AARCH64_PATH: ""
+      WINDOWS_AMD64_PATH: ""
+      WINDOWS_AARCH64_PATH: ""
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ needs.bump-version.outputs.ref }}
+
+    - name: Set computed environment variables
+      run: |
+        echo "LINUX_AMD64_PATH=${EXECUTABLE_NAME}-x86_64-Linux" >> $GITHUB_ENV
+        echo "LINUX_AMD64_MUSL_PATH=${EXECUTABLE_NAME}-x86_64-Linux-musl" >> $GITHUB_ENV
+        echo "LINUX_AARCH64_PATH=${EXECUTABLE_NAME}-aarch64-Linux" >> $GITHUB_ENV
+        echo "WINDOWS_AMD64_PATH=${EXECUTABLE_NAME}-x86_64-Windows.exe" >> $GITHUB_ENV
+        echo "WINDOWS_AARCH64_PATH=${EXECUTABLE_NAME}-aarch64-Windows.exe" >> $GITHUB_ENV
+
+    - name: Install github CLI
+      run: sudo apt install gh -y
+    
+    - name: Download Linux x86_64 Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ env.LINUX_AMD64_PATH }}
+        path: ${{ env.ARTIFACTS_DIR }}
+
+    - name: Download Linux Musl x86_64 Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ env.LINUX_AMD64_MUSL_PATH }}
+        path: ${{ env.ARTIFACTS_DIR }}
+
+    - name: Download Linux aarch64 Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ env.LINUX_AARCH64_PATH }}
+        path: ${{ env.ARTIFACTS_DIR }}
+    
+    - name: Download Windows x86_64 Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ env.WINDOWS_AMD64_PATH }}
+        path: ${{ env.ARTIFACTS_DIR }}
+
+    - name: Download Windows aarch64 Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ env.WINDOWS_AARCH64_PATH }}
+        path: ${{ env.ARTIFACTS_DIR }}
+    
+    - name: Create GitHub Release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Fetch commit history since the last tag
+        RELEASE_NOTES=$(gh api repos/:owner/:repo/pulls --jq '.[] | select(.merged_at != null) | "- #\(.number) \(.title) (@\(.user.login))"')
+
+        gh release create $EXTRACTED_VERSION --generate-notes \
+          ${{ env.ARTIFACTS_DIR }}${{ env.LINUX_AMD64_PATH }} \
+          ${{ env.ARTIFACTS_DIR }}${{ env.LINUX_AMD64_MUSL_PATH }} \
+          ${{ env.ARTIFACTS_DIR }}${{ env.LINUX_AARCH64_PATH }} \
+          ${{ env.ARTIFACTS_DIR }}${{ env.WINDOWS_AMD64_PATH }} \
+          ${{ env.ARTIFACTS_DIR }}${{ env.WINDOWS_AARCH64_PATH }} \
+          --title "Release $EXTRACTED_VERSION"
