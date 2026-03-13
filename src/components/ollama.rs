@@ -33,11 +33,28 @@ pub struct OllamaStreamResponse {
     eval_duration: Option<u64>,
 }
 
+#[derive(Serialize, Deserialize, Default)]
+pub struct OllamaOptions {
+    pub num_ctx: Option<u32>,
+    pub repeat_last_n: Option<i32>,
+    pub repeat_penalty: Option<f32>,
+    pub temperature: Option<f32>,
+    pub seed: Option<u32>,
+    pub stop: Option<Vec<String>>,
+    pub num_predict: Option<i32>,
+    pub top_k: Option<u32>,
+    pub top_p: Option<f32>,
+    pub min_p: Option<f32>,
+    pub presence_penalty: Option<f32>,
+    pub frequency_penalty: Option<f32>,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct OllamaBody<'a> {
     model: &'a str,
     messages: Vec<LLMMessage>,
     stream: bool,
+    options: Option<OllamaOptions>
 }
 
 pub struct Ollama<'a> {
@@ -121,10 +138,21 @@ impl LLM for Ollama<'_> {
         on_streaming_message: StreamingCallback,
     ) -> Conversation {
         let ollama_url = format!("{}/api/chat", self.cfg.ollama_url);
+        
+        let options = OllamaOptions {
+            num_ctx: Some(262144),
+            temperature: Some(0.6),
+            repeat_penalty: Some(1.15),
+            min_p: Some(0.05),
+            frequency_penalty: Some(0.5),
+            ..Default::default()
+        };
+
         let json = OllamaBody {
             model: &self.cfg.model,
             messages: conversation.messages.clone(),
             stream: true,
+            options: Some(options)
         };
 
         let resp = self.http_client.post(ollama_url).json(&json).send().await;

@@ -1,6 +1,6 @@
 mod components;
+use std::io::Write;
 use std::process::exit;
-use std::{env, io::Write};
 
 use components::{Config, DotEnv};
 
@@ -47,5 +47,4 @@ async fn main() {
             }),
         )
         .await;
-    
 }
