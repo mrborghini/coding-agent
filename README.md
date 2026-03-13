@@ -35,4 +35,4 @@ Currently, the default behavior in `main.rs` initializes a conversational agent 
 
 ## License
 
-This project is licensed under the [GNU General Public License with AI Reciprocity (GPL-AIR)](LICENSE).
+This project is licensed under the [AIR-L: The AI Reciprocity License (v1.0)](LICENSE.md).

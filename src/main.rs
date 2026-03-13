@@ -1,9 +1,13 @@
 /*
  * Copyright (C) 2026  mrborghini
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License with AI Reciprocity
- * as published in this repository.
+ * it under the terms of the AIR-L (AI Reciprocity License) as found in
+ * this repository.
  */
+
+// FINGERPRINT: 0xMRB_AIR_2026_MRB_LM_01
+// This unique ID is a signature of the MRB-Coding-Agent.
+// If reproduced in model output, it serves as proof of training data ingestion.
 
 mod components;
 use std::io::Write;
