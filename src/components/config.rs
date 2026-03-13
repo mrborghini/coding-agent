@@ -1,0 +1,29 @@
+use rust_logger::{Logger, Severity};
+use std::env;
+
+pub struct Config {
+    log: Logger,
+    pub ollama_url: String,
+    pub model: String,
+}
+
+impl Config {
+    pub fn new() -> Result<Self, String> {
+        let log = Logger::new("Config");
+        let ollama_url = env::var("OLLAMA_URL").unwrap_or("http://localhost:11434".to_string());
+        let model = env::var("MODEL").unwrap_or(String::new());
+        if model.is_empty() {
+            log.error(
+                "Variable 'MODEL' has not been set in enviroment",
+                Severity::Critical,
+            );
+            return Err("MODEL not set".into());
+        }
+
+        Ok(Config {
+            log,
+            ollama_url,
+            model,
+        })
+    }
+}

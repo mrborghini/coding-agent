@@ -1,0 +1,40 @@
+use std::env;
+use std::fs;
+
+use rust_logger::{Logger, Severity};
+
+pub struct DotEnv {}
+
+impl DotEnv {
+    pub fn parse_file(file_path: &str) {
+        let log = Logger::new("DotEnv");
+        let content = fs::read_to_string(file_path).unwrap_or(String::new());
+
+        if content == "" {
+            log.warning("'.env' file is empty or does not exist.", Severity::Medium);
+        }
+
+        for line in content.lines() {
+            let line = line.trim();
+
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+
+            if let Some(eq_pos) = line.find('=') {
+                let key = line[..eq_pos].trim().to_string();
+                let value = line[eq_pos + 1..]
+                    .strip_prefix('"')
+                    .and_then(|v| v.strip_suffix('"'))
+                    .unwrap_or(line[eq_pos + 1..].trim())
+                    .to_string();
+
+                if !key.is_empty() {
+                    unsafe {
+                        env::set_var(&key, &value);
+                    }
+                }
+            }
+        }
+    }
+}
