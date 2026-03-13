@@ -11,7 +11,6 @@
 
 mod components;
 use std::io::Write;
-use std::process::exit;
 
 use components::{
     Config, Conversation, DotEnv, LLM, LLMMessage, Ollama, ParameterType, Role, StreamingCallback,
@@ -100,15 +99,9 @@ fn make_streaming_callback() -> StreamingCallback {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     DotEnv::parse_file(".env");
-    let cfg = match Config::new() {
-        Ok(cfg) => cfg,
-        Err(e) => {
-            eprintln!("Failed to load config: {}", e);
-            exit(1);
-        }
-    };
+    let cfg = Config::new()?;
     let mut conversation = Conversation::new();
     let mut ollama = Ollama::new(&cfg);
     let mut weather_tool = Tool::new(
@@ -169,4 +162,5 @@ async fn main() {
             .complete(conversation, make_streaming_callback())
             .await;
     }
+    Ok(())
 }
