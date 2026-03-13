@@ -14,18 +14,46 @@ use std::io::Write;
 use std::process::exit;
 
 use components::{
-    Config, Conversation, DotEnv, LLMMessage, Ollama, ParameterType, Role, StreamingCallback,
-    Tool, LLM,
+    Config, Conversation, DotEnv, LLM, LLMMessage, Ollama, ParameterType, Role, StreamingCallback,
+    Tool,
 };
 
+fn handle_get_weather(tc: &components::ToolCall, conversation: &mut Conversation) {
+    let city = tc
+        .arguments
+        .get("city")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if city.is_empty() {
+        conversation.add_message(LLMMessage {
+            role: Role::Tool,
+            content: "Error: city is required".to_string(),
+            tool_calls: None,
+        });
+        return;
+    }
+    // let weather = get_weather(city); // TODO: Implement this function
+    conversation.add_message(LLMMessage {
+        role: Role::Tool,
+        content: format!("Weather in {} is sunny and 20 degrees Celsius", city),
+        tool_calls: None,
+    });
+}
+
 fn handle_calculate(tc: &components::ToolCall, conversation: &mut Conversation) {
-    let a = tc.arguments.get("first_number")
+    let a = tc
+        .arguments
+        .get("first_number")
         .and_then(|v| v.as_f64())
         .unwrap_or(0.0);
-    let b = tc.arguments.get("second_number")
+    let b = tc
+        .arguments
+        .get("second_number")
         .and_then(|v| v.as_f64())
         .unwrap_or(0.0);
-    let op_raw = tc.arguments.get("operation")
+    let op_raw = tc
+        .arguments
+        .get("operation")
         .and_then(|v| v.as_str())
         .unwrap_or("");
     let op = op_raw.trim().to_lowercase();
@@ -93,7 +121,12 @@ async fn main() {
         "Calculates the result of a mathematical expression",
     );
     math_tool.add_parameter("first_number", "First number", ParameterType::Number, true);
-    math_tool.add_parameter("second_number", "Second number", ParameterType::Number, true);
+    math_tool.add_parameter(
+        "second_number",
+        "Second number",
+        ParameterType::Number,
+        true,
+    );
     math_tool.add_enum_parameter(
         "operation",
         "The arithmetic operation to perform",
@@ -124,8 +157,10 @@ async fn main() {
 
     for tc in &result.tool_calls {
         println!("\n[Tool call] {} args={:?}", tc.name, tc.arguments);
-        if tc.name == "calculate" {
-            handle_calculate(tc, &mut conversation);
+        match tc.name.as_str() {
+            "calculate" => handle_calculate(tc, &mut conversation),
+            "get_weather" => handle_get_weather(tc, &mut conversation),
+            _ => println!("Unknown tool call: {}", tc.name),
         }
     }
 
