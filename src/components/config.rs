@@ -9,7 +9,6 @@ use rust_logger::{Logger, Severity};
 use std::env;
 
 pub struct Config {
-    log: Logger,
     pub ollama_url: String,
     pub model: String,
 }
@@ -28,7 +27,6 @@ impl Config {
         }
 
         Ok(Config {
-            log,
             ollama_url,
             model,
         })

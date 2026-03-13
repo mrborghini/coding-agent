@@ -6,6 +6,7 @@
  */
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub enum Role {
@@ -21,15 +22,17 @@ pub enum Role {
 
 #[derive(Serialize, Deserialize)]
 pub struct StreamingMessage {
-   pub role: Role,
-   pub content: String,
-   pub thinking: String,
+    pub role: Role,
+    pub content: String,
+    pub thinking: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct LLMMessage {
     pub role: Role,
     pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCall>>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -37,7 +40,7 @@ pub struct Conversation {
     pub messages: Vec<LLMMessage>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum ParameterType {
     #[serde(rename = "string")]
     String,
@@ -54,49 +57,85 @@ pub enum ParameterType {
 
 #[derive(Serialize, Deserialize)]
 pub struct ToolParameter {
-    required: bool,
-    name: String,
-    description: String,
+    pub required: bool,
+    pub name: String,
+    pub description: String,
     #[serde(rename = "type")]
-    param_type: ParameterType,
+    pub param_type: ParameterType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enum_values: Option<Vec<String>>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct Tool {
-    name: String,
-    description: String,
-    parameters: Vec<ToolParameter>,
+    pub name: String,
+    pub description: String,
+    pub parameters: Vec<ToolParameter>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ToolCall {
+    pub name: String,
+    pub arguments: HashMap<String, serde_json::Value>,
+}
+
+pub struct CompletionResult {
+    pub conversation: Conversation,
+    pub tool_calls: Vec<ToolCall>,
+}
+
+impl Tool {
+    pub fn new<S: AsRef<str>>(name: S, description: S) -> Self {
+        Self {
+            name: name.as_ref().to_string(),
+            description: description.as_ref().to_string(),
+            parameters: Vec::new(),
+        }
+    }
+
+    pub fn add_parameter<S: AsRef<str>>(
+        &mut self,
+        name: S,
+        description: S,
+        param_type: ParameterType,
+        required: bool,
+    ) {
+        let name = name.as_ref().to_string();
+        let description = description.as_ref().to_string();
+        self.parameters.push(ToolParameter {
+            required,
+            name,
+            description,
+            param_type,
+            enum_values: None,
+        });
+    }
+
+    pub fn add_enum_parameter<S: AsRef<str>>(
+        &mut self,
+        name: S,
+        description: S,
+        values: Vec<&str>,
+        required: bool,
+    ) {
+        let name = name.as_ref().to_string();
+        let description = description.as_ref().to_string();
+        self.parameters.push(ToolParameter {
+            required,
+            name,
+            description,
+            param_type: ParameterType::String,
+            enum_values: Some(values.into_iter().map(|v| v.to_string()).collect()),
+        });
+    }
 }
 
 impl Conversation {
     pub fn new() -> Self {
-        let messages: Vec<LLMMessage> = Vec::new();
-        Self { messages }
+        Self { messages: Vec::new() }
     }
 
     pub fn add_message(&mut self, message: LLMMessage) {
         self.messages.push(message);
-    }
-
-    pub fn get_token_count(&self) -> usize {
-        let copy = &self.messages;
-        let mut total_tokens = 0;
-        for msg in copy {
-            total_tokens += (msg.content.len() + 3) / 4;
-        }
-        total_tokens
-    }
-    
-    pub fn get_message_count(&self) -> usize {
-        self.messages.len()
-    }
-    
-    pub fn get_message_string(&self) -> String {
-        let mut buffer = String::new();
-        let copy = &self.messages;
-        for msg in copy {
-            buffer.push_str(&msg.content);
-        }
-        buffer
     }
 }

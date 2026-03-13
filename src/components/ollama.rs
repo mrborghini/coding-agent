@@ -6,24 +6,39 @@
  */
 
 use super::{
-    Config, Conversation, LLM, LLMMessage, Role, StreamingCallback, StreamingMessage, Tool,
+    CompletionResult, Config, Conversation, LLM, LLMMessage, Role, StreamingCallback,
+    StreamingMessage, Tool, ToolCall,
 };
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use reqwest::Response;
-use rust_logger::{Logger, Severity};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+#[derive(Serialize, Deserialize)]
+pub struct OllamaToolCall {
+    id: String,
+    function: OllamaToolCallFunction,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct OllamaToolCallFunction {
+    index: Option<u64>,
+    name: String,
+    arguments: HashMap<String, serde_json::Value>,
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct OllamaStreamMessage {
     role: Role,
     content: String,
     thinking: Option<String>,
+    tool_calls: Option<Vec<OllamaToolCall>>,
 }
 
 struct FullContent {
-    full_thinking: String,
     full_content: String,
+    tool_calls: Vec<ToolCall>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -56,98 +71,191 @@ pub struct OllamaOptions {
     pub frequency_penalty: Option<f32>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
+struct OllamaToolProperty {
+    #[serde(rename = "type")]
+    prop_type: String,
+    description: String,
+    #[serde(rename = "enum", skip_serializing_if = "Option::is_none")]
+    enum_values: Option<Vec<String>>,
+}
+
+#[derive(Serialize)]
+struct OllamaToolParameters {
+    #[serde(rename = "type")]
+    param_type: String,
+    required: Vec<String>,
+    properties: HashMap<String, OllamaToolProperty>,
+}
+
+#[derive(Serialize)]
+struct OllamaToolDefFunction {
+    name: String,
+    description: String,
+    parameters: OllamaToolParameters,
+}
+
+#[derive(Serialize)]
+struct OllamaTool {
+    #[serde(rename = "type")]
+    tool_type: String,
+    function: OllamaToolDefFunction,
+}
+
+#[derive(Serialize)]
+struct OllamaMessageToolCall {
+    function: OllamaMessageToolCallFunction,
+}
+
+#[derive(Serialize)]
+struct OllamaMessageToolCallFunction {
+    name: String,
+    arguments: HashMap<String, serde_json::Value>,
+}
+
+#[derive(Serialize)]
+struct OllamaMessage {
+    role: Role,
+    content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_calls: Option<Vec<OllamaMessageToolCall>>,
+}
+
+impl From<&Tool> for OllamaTool {
+    fn from(tool: &Tool) -> Self {
+        let mut required = Vec::new();
+        let mut properties = HashMap::new();
+
+        for param in &tool.parameters {
+            if param.required {
+                required.push(param.name.clone());
+            }
+            properties.insert(
+                param.name.clone(),
+                OllamaToolProperty {
+                    prop_type: serde_json::to_value(&param.param_type)
+                        .unwrap()
+                        .as_str()
+                        .unwrap()
+                        .to_string(),
+                    description: param.description.clone(),
+                    enum_values: param.enum_values.clone(),
+                },
+            );
+        }
+
+        OllamaTool {
+            tool_type: "function".to_string(),
+            function: OllamaToolDefFunction {
+                name: tool.name.clone(),
+                description: tool.description.clone(),
+                parameters: OllamaToolParameters {
+                    param_type: "object".to_string(),
+                    required,
+                    properties,
+                },
+            },
+        }
+    }
+}
+
+impl From<&LLMMessage> for OllamaMessage {
+    fn from(msg: &LLMMessage) -> Self {
+        let tool_calls = msg.tool_calls.as_ref().map(|calls| {
+            calls
+                .iter()
+                .map(|tc| OllamaMessageToolCall {
+                    function: OllamaMessageToolCallFunction {
+                        name: tc.name.clone(),
+                        arguments: tc.arguments.clone(),
+                    },
+                })
+                .collect()
+        });
+        OllamaMessage {
+            role: msg.role.clone(),
+            content: msg.content.clone(),
+            tool_calls,
+        }
+    }
+}
+
+#[derive(Serialize)]
 pub struct OllamaBody<'a> {
     model: &'a str,
-    messages: Vec<LLMMessage>,
+    messages: Vec<OllamaMessage>,
     stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     options: Option<OllamaOptions>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<OllamaTool>>,
 }
 
 pub struct Ollama<'a> {
-    log: Logger,
     cfg: &'a Config,
     http_client: reqwest::Client,
+    tools: Vec<Tool>,
 }
 
 impl<'a> Ollama<'a> {
     pub fn new(cfg: &'a Config) -> Self {
-        let log = Logger::new("Ollama");
         let http_client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(3600))
             .build()
-            .expect("A new http client");
-        return Self {
-            log,
+            .expect("Failed to create http client");
+        Self {
             cfg,
             http_client,
-        };
+            tools: Vec::new(),
+        }
     }
 
-    async fn handle_streaming(
-        &mut self,
-        response: Response,
-        mut on_streaming_message: StreamingCallback,
-    ) -> FullContent {
-        // We'll collect the full response here to update the conversation history
-        let mut full_content = String::new();
-        let mut full_thinking = String::new();
+    fn process_response(
+        parsed: &OllamaStreamResponse,
+        full_content: &mut String,
+        tool_calls: &mut Vec<ToolCall>,
+        on_streaming_message: &mut StreamingCallback,
+    ) {
+        let content = &parsed.message.content;
+        let thinking = parsed.message.thinking.as_deref().unwrap_or("");
 
-        let mut stream = response.bytes_stream();
-        let mut buffer = String::with_capacity(1024);
+        full_content.push_str(content);
 
-        while let Some(Ok(chunk)) = stream.next().await {
-            if let Ok(s) = std::str::from_utf8(&chunk) {
-                buffer.push_str(s);
-
-                while let Some(pos) = buffer.find('\n') {
-                    let line = &buffer[..pos]; // Optimized: borrow the line
-
-                    if let Ok(parsed) = serde_json::from_str::<OllamaStreamResponse>(line) {
-                        let content = &parsed.message.content;
-                        let thinking = parsed.message.thinking.as_deref().unwrap_or("");
-
-                        // 1. Build the message for the callback
-                        let msg = StreamingMessage {
-                            role: parsed.message.role.clone(),
-                            content: content.to_string(),
-                            thinking: thinking.to_string(),
-                        };
-
-                        // 2. Accumulate for history
-                        full_content.push_str(content);
-                        full_thinking.push_str(thinking);
-
-                        // 3. PASS THROUGH to the callback
-                        on_streaming_message(msg);
-                    }
-
-                    buffer.drain(..=pos); // Remove processed data
-                }
+        if let Some(calls) = &parsed.message.tool_calls {
+            for tc in calls {
+                tool_calls.push(ToolCall {
+                    name: tc.function.name.clone(),
+                    arguments: tc.function.arguments.clone(),
+                });
             }
         }
-        return FullContent {
-            full_content,
-            full_thinking,
-        };
-    }
-}
 
-#[async_trait]
-impl LLM for Ollama<'_> {
-    fn add_tool(&self, tool: Tool) {
-        todo!()
+        on_streaming_message(StreamingMessage {
+            role: parsed.message.role.clone(),
+            content: content.to_string(),
+            thinking: thinking.to_string(),
+        });
     }
 
-    async fn complete(
-        &mut self,
-        mut conversation: Conversation,
-        on_streaming_message: StreamingCallback,
-    ) -> Conversation {
-        let ollama_url = format!("{}/api/chat", self.cfg.ollama_url);
+    fn process_buffer(
+        buffer: &mut String,
+        full_content: &mut String,
+        tool_calls: &mut Vec<ToolCall>,
+        on_streaming_message: &mut StreamingCallback,
+    ) {
+        while let Some(pos) = buffer.find('\n') {
+            let line = &buffer[..pos];
+            if let Ok(parsed) = serde_json::from_str::<OllamaStreamResponse>(line) {
+                Self::process_response(&parsed, full_content, tool_calls, on_streaming_message);
+            }
+            buffer.drain(..=pos);
+        }
+    }
 
+    fn build_body(&self, conversation: &Conversation) -> OllamaBody<'_> {
         let options = OllamaOptions {
-            num_ctx: Some(262144),
+            num_ctx: Some(262144 / 8),
+            num_predict: Some(-1),
             temperature: Some(0.6),
             repeat_penalty: Some(1.15),
             min_p: Some(0.05),
@@ -155,29 +263,88 @@ impl LLM for Ollama<'_> {
             ..Default::default()
         };
 
-        let json = OllamaBody {
-            model: &self.cfg.model,
-            messages: conversation.messages.clone(),
-            stream: true,
-            options: Some(options),
+        let ollama_tools: Vec<OllamaTool> = self.tools.iter().map(OllamaTool::from).collect();
+        let tools = if ollama_tools.is_empty() {
+            None
+        } else {
+            Some(ollama_tools)
         };
 
-        let resp = self.http_client.post(ollama_url).json(&json).send().await;
+        OllamaBody {
+            model: &self.cfg.model,
+            messages: conversation.messages.iter().map(OllamaMessage::from).collect(),
+            stream: true,
+            options: Some(options),
+            tools,
+        }
+    }
 
+    async fn handle_streaming(
+        &mut self,
+        response: Response,
+        mut on_streaming_message: StreamingCallback,
+    ) -> FullContent {
         let mut full_content = String::new();
+        let mut tool_calls: Vec<ToolCall> = Vec::new();
+        let mut stream = response.bytes_stream();
+        let mut buffer = String::with_capacity(1024);
 
-        if let Ok(r) = resp {
-            let content = self.handle_streaming(r, on_streaming_message).await;
-            full_content = content.full_content;
+        while let Some(Ok(chunk)) = stream.next().await {
+            let Ok(s) = std::str::from_utf8(&chunk) else {
+                continue;
+            };
+            buffer.push_str(s);
+            Self::process_buffer(
+                &mut buffer,
+                &mut full_content,
+                &mut tool_calls,
+                &mut on_streaming_message,
+            );
         }
 
-        // Final step: Update conversation history so the next turn has context
+        FullContent {
+            full_content,
+            tool_calls,
+        }
+    }
+}
+
+#[async_trait]
+impl LLM for Ollama<'_> {
+    fn add_tool(&mut self, tool: Tool) {
+        self.tools.push(tool);
+    }
+
+    async fn complete(
+        &mut self,
+        mut conversation: Conversation,
+        on_streaming_message: StreamingCallback,
+    ) -> CompletionResult {
+        let url = format!("{}/api/chat", self.cfg.ollama_url);
+        let body = self.build_body(&conversation);
+        let resp = self.http_client.post(url).json(&body).send().await;
+
+        let (full_content, tool_calls) = match resp {
+            Ok(r) => {
+                let result = self.handle_streaming(r, on_streaming_message).await;
+                (result.full_content, result.tool_calls)
+            }
+            Err(_) => (String::new(), Vec::new()),
+        };
+
         conversation.messages.push(LLMMessage {
             role: Role::Assistant,
             content: full_content,
-            // Add thinking here if your LLMMessage supports it
+            tool_calls: if tool_calls.is_empty() {
+                None
+            } else {
+                Some(tool_calls.clone())
+            },
         });
 
-        conversation
+        CompletionResult {
+            conversation,
+            tool_calls,
+        }
     }
 }
