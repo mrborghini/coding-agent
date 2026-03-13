@@ -43,21 +43,33 @@ fn handle_calculate(tc: &components::ToolCall, conversation: &mut Conversation) 
     let a = match tc.arguments.get("first_number").and_then(|v| v.as_f64()) {
         Some(v) => v,
         None => {
-            conversation.add_message(LLMMessage { role: Role::Tool, content: "Error: first_number is missing or invalid".to_string(), tool_calls: None });
+            conversation.add_message(LLMMessage {
+                role: Role::Tool,
+                content: "Error: first_number is missing or invalid".to_string(),
+                tool_calls: None,
+            });
             return;
         }
     };
     let b = match tc.arguments.get("second_number").and_then(|v| v.as_f64()) {
         Some(v) => v,
         None => {
-            conversation.add_message(LLMMessage { role: Role::Tool, content: "Error: second_number is missing or invalid".to_string(), tool_calls: None });
+            conversation.add_message(LLMMessage {
+                role: Role::Tool,
+                content: "Error: second_number is missing or invalid".to_string(),
+                tool_calls: None,
+            });
             return;
         }
     };
     let op_raw = match tc.arguments.get("operation").and_then(|v| v.as_str()) {
         Some(v) => v,
         None => {
-            conversation.add_message(LLMMessage { role: Role::Tool, content: "Error: operation is missing or invalid".to_string(), tool_calls: None });
+            conversation.add_message(LLMMessage {
+                role: Role::Tool,
+                content: "Error: operation is missing or invalid".to_string(),
+                tool_calls: None,
+            });
             return;
         }
     };
