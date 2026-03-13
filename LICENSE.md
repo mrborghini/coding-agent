@@ -14,7 +14,7 @@ This license is a derivative work of the GNU GPL v2, modified to address the uni
 
 "The Model" refers to any neural network weights, parameters, or weight-sets created by training on, fine-tuning with, or optimizing against the Program, its source code, its documentation, or its generated outputs.
 
-A "work based on the Program" means either the Program or any derivative work under copyright law. For the purposes of this License, a "work based on the Program" shall also include any "Computational Intelligence Work." This includes, but is not limited to, any Machine Learning Model, Large Language Model (LLM), or Neural Network weight-set — i.e. any instance of The Model.
+A "work based on the Program" means either the Program or any derivative work under copyright law. For the purposes of this License, a "work based on the Program" shall also include any "Computational Intelligence Work." This includes, but is not limited to, any Machine Learning Model, Large Language Model (LLM), or Neural Network weight-set - i.e. any instance of The Model.
 
 **1. Distribution of Source Code**
 You may copy and distribute verbatim copies of the Program's source code as you receive it, provided that you conspicuously publish on each copy an appropriate copyright notice and disclaimer of warranty; keep intact all notices that refer to this License; and give any other recipients of the Program a copy of this License along with the Program.
