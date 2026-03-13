@@ -17,12 +17,17 @@ jobs:
     permissions:
       contents: write
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
       with:
         fetch-depth: 0
 
+    - name: Install Rust
+      run: rustup update stable
+
     - name: Bump Cargo.toml version if unchanged
       id: bump
+      env:
+        PKG_NAME: ${{ env.EXECUTABLE_NAME }}
       run: |
         CURRENT=$(grep '^version =' Cargo.toml | head -n 1 | sed 's/version = "//;s/"//')
         LATEST_TAG=$(git tag -l --sort=-v:refname | head -1)
@@ -46,9 +51,10 @@ jobs:
           NEW_PATCH=$((PATCH + 1))
           NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
           sed -i "s/^version = \".*\"$/version = \"$NEW_VERSION\"/" Cargo.toml
+          cargo update
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml
+          git add Cargo.toml Cargo.lock
           git commit -m "chore: bump version to $NEW_VERSION [skip ci]"
           git push
         fi
@@ -61,7 +67,7 @@ jobs:
       version: ${{ steps.extract_version.outputs.version }}
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
       with:
         ref: ${{ needs.bump-version.outputs.ref }}
 
@@ -79,7 +85,7 @@ jobs:
       IDENTIFIER: "x86_64-Linux"
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
       with:
         ref: ${{ needs.bump-version.outputs.ref }}
 
@@ -97,7 +103,7 @@ jobs:
         cp target/release/${{ env.EXECUTABLE_NAME }} ${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: ${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}
         path: ./${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}
@@ -112,7 +118,7 @@ jobs:
       CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: "aarch64-linux-gnu-gcc"
   
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
       with:
         ref: ${{ needs.bump-version.outputs.ref }}
 
@@ -136,7 +142,7 @@ jobs:
         cp target/${{ env.TARGET_COMPILER }}/release/${{ env.EXECUTABLE_NAME }} ${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: ${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}
         path: ./${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}
@@ -150,7 +156,7 @@ jobs:
       TARGET_COMPILER: "x86_64-unknown-linux-musl"
   
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
       with:
         ref: ${{ needs.bump-version.outputs.ref }}
 
@@ -174,7 +180,7 @@ jobs:
         cp target/${{ env.TARGET_COMPILER }}/release/${{ env.EXECUTABLE_NAME }} ${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: ${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}
         path: ./${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}
@@ -187,7 +193,7 @@ jobs:
       IDENTIFIER: "x86_64-Windows"
   
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
       with:
         ref: ${{ needs.bump-version.outputs.ref }}
 
@@ -205,7 +211,7 @@ jobs:
         cp target/release/${{ env.EXECUTABLE_NAME }}.exe ${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}.exe
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: ${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}.exe
         path: ./${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}.exe
@@ -219,7 +225,7 @@ jobs:
       TARGET_COMPILER: "aarch64-pc-windows-msvc"
   
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
       with:
         ref: ${{ needs.bump-version.outputs.ref }}
 
@@ -237,7 +243,7 @@ jobs:
         cp target/${{ env.TARGET_COMPILER }}/release/${{ env.EXECUTABLE_NAME }}.exe ${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}.exe
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: ${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}.exe
         path: ./${{ env.EXECUTABLE_NAME }}-${{ env.IDENTIFIER }}.exe
@@ -263,7 +269,7 @@ jobs:
       WINDOWS_AARCH64_PATH: ""
     
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
       with:
         ref: ${{ needs.bump-version.outputs.ref }}
 
@@ -279,31 +285,31 @@ jobs:
       run: sudo apt install gh -y
     
     - name: Download Linux x86_64 Artifact
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v6
       with:
         name: ${{ env.LINUX_AMD64_PATH }}
         path: ${{ env.ARTIFACTS_DIR }}
 
     - name: Download Linux Musl x86_64 Artifact
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v6
       with:
         name: ${{ env.LINUX_AMD64_MUSL_PATH }}
         path: ${{ env.ARTIFACTS_DIR }}
 
     - name: Download Linux aarch64 Artifact
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v6
       with:
         name: ${{ env.LINUX_AARCH64_PATH }}
         path: ${{ env.ARTIFACTS_DIR }}
     
     - name: Download Windows x86_64 Artifact
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v6
       with:
         name: ${{ env.WINDOWS_AMD64_PATH }}
         path: ${{ env.ARTIFACTS_DIR }}
 
     - name: Download Windows aarch64 Artifact
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v6
       with:
         name: ${{ env.WINDOWS_AARCH64_PATH }}
         path: ${{ env.ARTIFACTS_DIR }}
